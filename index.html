@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Химический конструктор реакций</title>
+<style>
+:root{--bg:#0a0c0b;--s1:#121614;--s2:#1a201d;--ln:#27322c;--tx:#e8f0eb;--mu:#8ea397;--g:#38c172}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 "Segoe UI",system-ui,sans-serif}
+.w{max-width:860px;margin:0 auto;padding:22px 16px 70px}
+h1{font-size:27px;margin:6px 0 4px;letter-spacing:-.3px}
+.sub{color:var(--mu);margin:0 0 20px}
+.card{background:var(--s1);border:1px solid var(--ln);border-radius:12px;padding:16px;margin-bottom:14px}
+.card h2{font-size:15px;margin:0 0 10px;color:var(--mu);font-weight:600}
+.row{display:flex;gap:8px;margin-bottom:8px}
+input{flex:1;min-width:0;background:var(--s2);border:1px solid var(--ln);color:var(--tx);border-radius:8px;padding:11px 12px;font:17px Consolas,"JetBrains Mono",monospace;outline:none}
+input:focus{border-color:var(--g)}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--ln);background:var(--s2);color:var(--tx);padding:8px 12px}
+button:hover{border-color:var(--g)}
+.pri{background:var(--g);border-color:var(--g);color:#06140c;font-weight:700}
+.pri:hover{background:#4fd286}
+.kb{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.kb button{font-family:Consolas,monospace;padding:7px 11px;min-width:42px}
+.kb .rad{color:var(--g)}
+.kt{font-size:13px;color:var(--mu);margin:8px 0 6px}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{font-size:14px;padding:6px 10px}
+.f{font-family:Consolas,"JetBrains Mono",monospace}
+.rec{padding:3px 0}
+.bad{border-color:#6b3a2e;color:#f0c9bd}
+.tag{display:inline-block;font-size:13px;color:var(--g);border:1px solid var(--g);border-radius:6px;padding:1px 8px;margin-bottom:8px}
+.eq{font:19px/1.6 Consolas,"JetBrains Mono",monospace;overflow-x:auto;padding:4px 0;white-space:nowrap}
+.cond{color:var(--mu);font-size:14px;margin-bottom:8px}
+.pr{padding:8px 0;border-top:1px solid var(--ln);display:flex;justify-content:space-between;gap:10px;align-items:center}
+.pr span.n{color:var(--mu)}
+.use{font-size:13px;padding:4px 9px;white-space:nowrap}
+</style></head><body><div class="w">
+<h1>Химический конструктор</h1>
+<p class="sub">Органика и неорганика, 10–11 класс. Вводи формулы (CH2=CH-CH3) или названия (пропен, уксусная кислота).</p>
+<div class="card"><h2>Исходные вещества</h2><div id="rows"></div>
+<div class="acts"><button id="add">+ вещество</button><button class="pri" id="go">Получить продукты</button></div></div>
+<div class="card"><h2>Химическая клавиатура</h2><div id="kb"></div>
+<div class="acts"><button id="bs">⌫ стереть</button><button id="clr">очистить поле</button></div></div>
+<div class="card"><h2>Примеры по темам</h2><div class="chips" id="ex"></div></div>
+<div id="out"></div></div>
+<script>
+const ROOT=["","мет","эт","проп","бут","пент","гекс"],ALK=["","метил","этил","пропил","бутил","пентил","гексил"];
+const ACID_T=["","муравьиная","уксусная","пропионовая","масляная","валериановая","капроновая"];
+const SALT_T=["","формиат","ацетат","пропионат","бутират","валерат","капронат"];
+const ALD_T=["","формальдегид","ацетальдегид","пропионовый альдегид","масляный альдегид","",""];
+const HALN={Cl:"хлор",Br:"бром"};
+const nk=s=>s.replace(/[\s\-()]/g,"");
+const qn=s=>{s=s.trim().toLowerCase().replace(/ё/g,"е").replace(/\s+/g," ").replace(/\s*-\s*/g,"-");return s.replace(/([а-я])\s(?=\d)/g,"$1-")};
+const alkyl=n=>n==1?"CH3":`C${n}H${2*n+1}`;
+const gcd=(a,b)=>b?gcd(b,a%b):a;
+const P=s=>{const a=s.split(":");return[a[1],+a[2],+a[3]]};
+const setd=(o,k,v)=>{if(!(k in o))o[k]=v};
+
+function spec(c,n,p){const m=(c=="aldehyde"||c=="acid")?n-1:n;const b=Array(Math.max(m-1,0)).fill(1);
+ const s=Array.from({length:m},()=>[]);let end=null;
+ if(c=="alkene")b[p-1]=2;else if(c=="alkyne")b[p-1]=3;else if(c=="alcohol")s[p-1]=["OH"];
+ else if(c=="diol"){s[p-1]=["OH"];s[p]=["OH"]}else if(c=="ketone")s[p-1]=["=O"];
+ else if(c.startsWith("dihal")){s[p-1]=[c.slice(5)];s[p]=[c.slice(5)]}
+ else if(c.startsWith("hal"))s[p-1]=[c.slice(3)];else if(c=="aldehyde")end="CHO";else if(c=="acid")end="COOH";
+ return[m,b,s,end]}
+
+function render(c,n,p,rev,att){
+ if(c=="alkoxide")return alkyl(n)+"-ONa";
+ if(c=="salt"||c=="ester"){const a=render("acid",n,1,rev,att);
+  if(c=="salt")return a.replace("COOH","COONa").replace("HOOC","NaOOC");
+  return a.replace("COOH","COO-"+alkyl(p)).replace("HOOC",alkyl(p)+"-OOC")}
+ const[m,b,s,end]=spec(c,n,p);
+ if(m==0)return c=="aldehyde"?"HCHO":"HCOOH";
+ let A=[];
+ for(let i=0;i<m;i++){const l=i?b[i-1]:0;const r=i<m-1?b[i]:(end?1:0);let sb=s[i],t;
+  if(sb.includes("=O")){t="CO";sb=sb.filter(x=>x!="=O")}
+  else{const h=4-l-r-sb.length;t="C"+(h>0?"H"+(h>1?h:""):"")}
+  A.push([t,sb])}
+ let bonds=[...b];
+ if(end){A.push([end,[]]);bonds.push(1)}
+ if(rev){A.reverse();bonds.reverse();if(end)A[0][0]={CHO:"OHC",COOH:"HOOC"}[end]}
+ const L=A.length,sym={1:"-",2:"=",3:"≡"};let out="";
+ A.forEach(([t0,sb],i)=>{let t=t0;
+  for(const x of sb){
+   if(L==1)t=att?t+x:t+"-"+x;
+   else if(i>0&&i<L-1)t+="("+x+")";
+   else if(i==0)t=att?t+x:(x=="OH"?"HO":x)+"-"+t;
+   else t=att?t+x:t+"-"+x}
+  out+=t+(i<L-1?sym[bonds[i]]:"")});
+ return out}
+
+function names(c,n,p){const R=ROOT[n],a=ALK[n];let i,t="",al=[];
+ if(c=="alkane")i=R+"ан";
+ else if(c=="alkene"){i=R+"ен"+(n>3?"-"+p:"");t={2:"этилен",3:"пропилен"}[n]||"";al=[`${R}-${p}-ен`]}
+ else if(c=="alkyne"){i=R+"ин"+(n>3?"-"+p:"");t=n==2?"ацетилен":""}
+ else if(c=="alcohol"){i=R+"анол"+(n>2?"-"+p:"");
+  t={"1,1":"метиловый спирт","2,1":"этиловый спирт","3,1":"пропиловый спирт","3,2":"изопропиловый спирт","4,1":"бутиловый спирт"}[n+","+p]||"";
+  al=[`${R}ан-${p}-ол`,`${p}-${R}анол`]}
+ else if(c=="diol"){i=`${R}андиол-${p},${p+1}`;t=p==1?({2:"этиленгликоль",3:"пропиленгликоль"}[n]||""):""}
+ else if(c=="aldehyde"){i=R+"аналь";t=ALD_T[n];al={1:["муравьиный альдегид"],2:["уксусный альдегид"]}[n]||[]}
+ else if(c=="ketone"){i=R+"анон"+(n>4?"-"+p:"");t=n==3?"ацетон":""}
+ else if(c=="acid"){i=R+"ановая кислота";t=ACID_T[n]+" кислота"}
+ else if(c.startsWith("dihal"))i=`${p},${p+1}-ди${HALN[c.slice(5)]}${R}ан`;
+ else if(c.startsWith("hal"))i=(n>2?p+"-":"")+HALN[c.slice(3)]+R+"ан";
+ else if(c=="salt"){i=R+"аноат натрия";t=SALT_T[n]+" натрия"}
+ else if(c=="alkoxide"){i=R+"анолят натрия";t=a+"ат натрия"}
+ else{i=ALK[p]+ROOT[n]+"аноат";t=ALK[p]+SALT_T[n]}
+ return[i,t,al]}
+
+const INF={},NAME=Object.create(null),FORM=Object.create(null),ALL=[];
+const add=(c,n,p=1)=>ALL.push(`o:${c}:${n}:${p}`);
+for(let n=1;n<=6;n++){
+ ["alkane","aldehyde","acid","salt","alkoxide"].forEach(c=>add(c,n));
+ for(const X in HALN){for(let p=1;p<=((n+1)>>1);p++)add("hal"+X,n,p);
+  if(n>1)for(let p=1;p<=(n>>1);p++)add("dihal"+X,n,p)}
+ if(n>1)for(let p=1;p<=(n>>1);p++){add("alkene",n,p);add("alkyne",n,p);add("diol",n,p)}
+ for(let p=1;p<=((n+1)>>1);p++)add("alcohol",n,p);
+ if(n>2)for(let p=2;p<=((n+1)>>1);p++)add("ketone",n,p)}
+for(let x=1;x<=4;x++)for(let y=1;y<=4;y++)add("ester",x,y);
+
+const INORG={"H2":"водород","O2":"кислород","Cl2":"хлор","Br2":"бром|бромная вода","HCl":"хлороводород (соляная кислота)|соляная кислота",
+"HBr":"бромоводород|бромоводородная кислота","H2O":"вода","H2SO4":"серная кислота","HNO3":"азотная кислота",
+"NaOH":"гидроксид натрия (едкий натр)|едкий натр|щелочь","KOH":"гидроксид калия (едкое кали)|едкое кали","Na":"натрий",
+"Cu(OH)2":"гидроксид меди(II)","CuO":"оксид меди(II)|оксид меди","Cu2O":"оксид меди(I)","Cu":"медь","Ag":"серебро",
+"Ag2O":"оксид серебра (аммиачный раствор)|аммиачный раствор оксида серебра|реактив толленса","KMnO4":"перманганат калия|марганцовка",
+"MnO2":"оксид марганца(IV)","Na2CO3":"карбонат натрия|сода","NaHCO3":"гидрокарбонат натрия|питьевая сода",
+"CO2":"углекислый газ|оксид углерода(IV)","NH3":"аммиак","NH4Cl":"хлорид аммония|нашатырь","CaC2":"карбид кальция",
+"Ca(OH)2":"гидроксид кальция (гашёная известь)|гашеная известь","NaCl":"хлорид натрия (поваренная соль)|поваренная соль",
+"KCl":"хлорид калия","NaBr":"бромид натрия","KBr":"бромид калия","Na2SO4":"сульфат натрия","NaNO3":"нитрат натрия",
+"CuCl2":"хлорид меди(II)","C6H6":"бензол","CH2=CH-Cl":"хлорэтен (винилхлорид)|винилхлорид",
+"(-CH2-CH2-)n":"полиэтилен","(-CH2-CH(CH3)-)n":"полипропилен"};
+
+ALL.forEach(s=>{const[c,n,p]=P(s);
+ const disp=render(c,n,p,["alcohol","halCl","halBr"].includes(c)&&p==1,/^(di)?hal/.test(c));
+ const[i,t,al]=names(c,n,p);INF[s]=[disp,i+(t?` (${t})`:"")];
+ for(const rev of[false,true])for(const att of[false,true])setd(FORM,nk(render(c,n,p,rev,att)),s);
+ let mo=null;
+ if(p==1){mo={alkane:`C${n}H${2*n+2}`,alkene:`C${n}H${2*n}`,alkyne:`C${n}H${2*n-2}`,alcohol:`C${n}H${2*n+1}OH`}[c]||null;
+  if(c=="acid"&&n>2)mo=`C${n-1}H${2*n-1}COOH`}
+ if(mo)setd(FORM,mo,s);
+ [i,t,...al].forEach(x=>{if(x)setd(NAME,qn(x),s)});
+ if(p==1)[i.replace(/-\d+(,\d+)?$/,""),i.replace(/^\d+(,\d+)?-/,"")].forEach(x=>setd(NAME,qn(x),s))});
+Object.entries(INORG).forEach(([key,val])=>{const s="i:"+key,parts=val.split("|");INF[s]=[key,parts[0]];FORM[nk(key)]=s;
+ parts.forEach(pt=>{setd(NAME,qn(pt),s);setd(NAME,qn(pt.replace(/\s+\(.*/,"")),s)})});
+const FORMLOW=Object.create(null);
+for(const k in FORM){const l=k.toLowerCase();FORMLOW[l]=(l in FORMLOW&&FORMLOW[l]!==FORM[k])?null:FORM[k]}
+
+const I=k=>"i:"+k;
+const S=(c,n,p=1)=>{if(["alkene","alkyne","diol"].includes(c)||c.startsWith("dihal"))p=Math.min(p,n-p);
+ else if(c=="alcohol"||c=="ketone"||c.startsWith("hal"))p=Math.min(p,n+1-p);return`o:${c}:${n}:${p}`};
+const mf=a=>{const[c,n,p]=P(a);return{alkane:[n,2*n+2,0],alkene:[n,2*n,0],alkyne:[n,2*n-2,0],alcohol:[n,2*n+2,1],diol:[n,2*n+2,2],
+ aldehyde:[n,2*n,1],ketone:[n,2*n,1],acid:[n,2*n,2],ester:[n+p,2*(n+p),2]}[c]};
+function mk(t,cond,L,R){
+ if([...L,...R].some(([,s])=>!(s in INF)))return null;
+ const f=X=>X.map(([c,s])=>(typeof c=="string"?c:(c==1?"":String(c)))+INF[s][0]).join(" + ");
+ const seen=[],pr=[];R.forEach(([,s])=>{if(!seen.includes(s)){seen.push(s);pr.push({f:INF[s][0],n:INF[s][1]})}});
+ return{type:t,cond,eq:f(L)+" → "+f(R),prods:pr}}
+
+const RX=`HCl+NaOH>NaCl+H2O|нейтрализация
+HCl+KOH>KCl+H2O|нейтрализация
+HBr+NaOH>NaBr+H2O|нейтрализация
+H2SO4+2NaOH>Na2SO4+2H2O|нейтрализация
+HNO3+NaOH>NaNO3+H2O|нейтрализация
+Na2CO3+2HCl>2NaCl+CO2+H2O|обмен
+NaHCO3+HCl>NaCl+CO2+H2O|обмен
+2Na+2H2O>2NaOH+H2|замещение
+2Na+2HCl>2NaCl+H2|замещение
+H2+Cl2>2HCl|соединение|hν (свет)
+H2+Br2>2HBr|соединение|t
+CaC2+2H2O>C2H2+Ca(OH)2|гидролиз карбида (получение ацетилена)
+NH3+HCl>NH4Cl|соединение
+CuO+H2>Cu+H2O|восстановление|t
+CuO+2HCl>CuCl2+H2O|обмен
+Cu(OH)2+2HCl>CuCl2+2H2O|обмен
+CO2+2NaOH>Na2CO3+H2O|обмен`.split("\n");
+const lookup=tok=>{const m=tok.match(/^(\d*)(.+)$/);return[+(m[1]||1),FORM[nk(m[2])]]};
+const RXD={};
+RX.forEach(line=>{const[eq,typ,cd]=line.split("|");const[l,r]=eq.split(">");
+ const L=l.split("+").map(lookup),R=r.split("+").map(lookup);
+ RXD[L.map(x=>x[1].slice(2)).sort().join("|")]=[typ,cd||"",L,R]});
+
+function org(a,b){const[c,n,p]=P(a);const R=[];
+ const k=b&&b.startsWith("i:")?b.slice(2):null;
+ const X=(k=="Cl2"||k=="Br2")?k.slice(0,-1):((k=="HCl"||k=="HBr")?k.slice(1):null);
+ const ad=(...x)=>{const r=mk(...x);if(r)R.push(r)};
+ if(k=="O2"&&mf(a)){const[x,y,z]=mf(a);const o=4*x+y-2*z;const g=gcd(gcd(4,o),gcd(4*x,2*y));
+  ad("горение (полное окисление)","t",[[4/g,a],[o/g,b]],[[4*x/g,I("CO2")],[2*y/g,I("H2O")]])}
+ if(c=="alkane"){
+  if(k=="Cl2"||k=="Br2")ad("замещение (радикальное)","hν (свет)",[[1,a],[1,b]],[[1,S("hal"+X,n,n<3?1:2)],[1,I("H"+X)]]);
+  if(b===null){if(n==1)ad("пиролиз метана","1500 °C",[[2,a]],[[1,S("alkyne",2)],[3,I("H2")]]);
+   else ad("дегидрирование","Ni (или Cr2O3), t",[[1,a]],[[1,S("alkene",n)],[1,I("H2")]])}}
+ if(c=="alkene"){const q=(p==1&&n>2)?2:p;
+  if(k=="H2")ad("присоединение (гидрирование)","Ni, t",[[1,a],[1,b]],[[1,S("alkane",n)]]);
+  if(k=="Cl2"||k=="Br2")ad("присоединение (галогенирование)",X=="Br"?"обесцвечивает бромную воду":"CCl4",[[1,a],[1,b]],[[1,S("dihal"+X,n,p)]]);
+  if(k=="HCl"||k=="HBr")ad("присоединение (гидрогалогенирование, правило Марковникова)","",[[1,a],[1,b]],[[1,S("hal"+X,n,q)]]);
+  if(k=="H2O")ad("присоединение (гидратация, правило Марковникова)","H2SO4 или H3PO4, t, p",[[1,a],[1,b]],[[1,S("alcohol",n,q)]]);
+  if(k=="KMnO4")ad("мягкое окисление (реакция Вагнера)","H2O, 20 °C, раствор обесцвечивается",[[3,a],[2,b],[4,I("H2O")]],[[3,S("diol",n,p)],[2,I("MnO2")],[2,I("KOH")]]);
+  if(b===null&&p==1&&(n==2||n==3))ad("полимеризация","t, p, катализатор",[["n ",a]],[[1,I(n==2?"(-CH2-CH2-)n":"(-CH2-CH(CH3)-)n")]])}
+ if(c=="alkyne"){
+  if(k=="H2"){ad("гидрирование (неполное)","Pd, катализатор Линдлара",[[1,a],[1,b]],[[1,S("alkene",n,p)]]);
+   ad("гидрирование (полное)","Ni, t",[[1,a],[2,b]],[[1,S("alkane",n)]])}
+  if(k=="HCl"&&n==2)ad("гидрохлорирование","HgCl2, t",[[1,a],[1,b]],[[1,I("CH2=CH-Cl")]]);
+  if(k=="H2O"&&p==1)ad("гидратация (реакция Кучерова)","HgSO4, H2SO4, t",[[1,a],[1,b]],[[1,n==2?S("aldehyde",2):S("ketone",n,2)]]);
+  if(b===null&&n==2)ad("тримеризация (реакция Зелинского)","C активированный, 600 °C",[[3,a]],[[1,I("C6H6")]])}
+ if(c=="alcohol"){
+  if(k=="Na"&&p==1)ad("замещение (с активным металлом)","",[[2,a],[2,b]],[[2,S("alkoxide",n)],[1,I("H2")]]);
+  if(k=="HCl"||k=="HBr")ad("замещение OH на галоген","H2SO4 (конц.), t",[[1,a],[1,b]],[[1,S("hal"+X,n,p)],[1,I("H2O")]]);
+  if(k=="H2SO4"&&n>1)ad("внутримолекулярная дегидратация (правило Зайцева)","H2SO4 (конц.), t > 140 °C",[[1,a]],[[1,S("alkene",n,p)],[1,I("H2O")]]);
+  if(k=="CuO")ad("окисление","t",[[1,a],[1,b]],[[1,p==1?S("aldehyde",n):S("ketone",n,p)],[1,I("Cu")],[1,I("H2O")]]);
+  if(b&&b.startsWith("o:")){const bb=P(b);if(bb[0]=="acid"&&p==1)
+   ad("этерификация","H2SO4 (конц.), t",[[1,b],[1,a]],[[1,S("ester",bb[1],n)],[1,I("H2O")]])}}
+ if(c=="aldehyde"){
+  if(k=="H2")ad("присоединение (гидрирование)","Ni, t",[[1,a],[1,b]],[[1,S("alcohol",n,1)]]);
+  if(k=="Ag2O")ad("«серебряное зеркало»","NH3 (р-р), t",[[1,a],[1,b]],[[1,S("acid",n)],[2,I("Ag")]]);
+  if(k=="Cu(OH)2")ad("окисление свежим Cu(OH)2","t",[[1,a],[2,b]],[[1,S("acid",n)],[1,I("Cu2O")],[2,I("H2O")]])}
+ if(c=="ketone"&&k=="H2")ad("присоединение (гидрирование)","Ni, t",[[1,a],[1,b]],[[1,S("alcohol",n,p)]]);
+ if(c=="acid"){
+  if(k=="NaOH")ad("нейтрализация","",[[1,a],[1,b]],[[1,S("salt",n)],[1,I("H2O")]]);
+  if(k=="Na2CO3")ad("обмен (выделение CO2)","",[[2,a],[1,b]],[[2,S("salt",n)],[1,I("CO2")],[1,I("H2O")]]);
+  if(k=="NaHCO3")ad("обмен (выделение CO2)","",[[1,a],[1,b]],[[1,S("salt",n)],[1,I("CO2")],[1,I("H2O")]]);
+  if(k=="Na")ad("замещение (с активным металлом)","",[[2,a],[2,b]],[[2,S("salt",n)],[1,I("H2")]])}
+ if(c.startsWith("hal")){const Y=c.slice(3);
+  if(k=="NaOH")ad("замещение (щелочной гидролиз)","H2O, t",[[1,a],[1,b]],[[1,S("alcohol",n,p)],[1,I("Na"+Y)]]);
+  if(k=="KOH"&&n>1)ad("отщепление (дегидрогалогенирование)","спиртовой раствор, t",[[1,a],[1,b]],[[1,S("alkene",n,p)],[1,I("K"+Y)],[1,I("H2O")]]);
+  if(k=="Na"&&p==1&&2*n<=6)ad("реакция Вюрца","сухой эфир",[[2,a],[2,b]],[[1,S("alkane",2*n)],[2,I("Na"+Y)]])}
+ return R}
+
+function pair(a,b){
+ if(a.startsWith("i:")&&b.startsWith("i:")){const r=RXD[[a.slice(2),b.slice(2)].sort().join("|")];return r?[mk(...r)]:[]}
+ let out=[];if(a.startsWith("o:"))out=out.concat(org(a,b));if(b.startsWith("o:"))out=out.concat(org(b,a));return out}
+function react(subs){let res=[];
+ if(subs.length==1&&subs[0].startsWith("o:"))res=res.concat(org(subs[0],null));
+ for(let i=0;i<subs.length;i++)for(let j=i+1;j<subs.length;j++)if(subs[i]!==subs[j])res=res.concat(pair(subs[i],subs[j]));
+ const seen=new Set(),out=[];res.forEach(r=>{if(r&&!seen.has(r.eq)){seen.add(r.eq);out.push(r)}});return out}
+function parse(raw){raw=raw.trim();if(!raw)return null;const q=qn(raw);if(q in NAME)return NAME[q];
+ let t=raw.replace(/[₀-₉]/g,c=>String(c.charCodeAt(0)-8320)).replace(/[−–—]/g,"-");
+ if(!/[а-яё]/.test(t))t=t.replace(/[СНОКВ]/g,c=>"CHOKB"["СНОКВ".indexOf(c)]);
+ const k=nk(t);return FORM[k]||FORMLOW[k.toLowerCase()]||null}
+
+/*UI*/
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const fm=s=>esc(s).replace(/([A-Za-z\)])(\d+)/g,"$1<sub>$2</sub>");
+let cur=null;
+function row(v){const d=document.createElement("div");d.className="row";
+ d.innerHTML='<input placeholder="формула или название" autocomplete="off" spellcheck="false"><button title="убрать">×</button>';
+ const i=d.querySelector("input");i.value=v||"";i.onfocus=()=>cur=i;i.onkeydown=e=>{if(e.key==="Enter")go()};
+ d.querySelector("button").onclick=()=>{d.remove();if(cur===i)cur=null};$("#rows").appendChild(d);return i}
+function ins(t){if(!cur||!document.contains(cur))cur=document.querySelector("#rows input")||row("");
+ const s=cur.selectionStart,e=cur.selectionEnd;cur.value=cur.value.slice(0,s)+t+cur.value.slice(e);
+ cur.focus();cur.setSelectionRange(s+t.length,s+t.length)}
+const KB=[["Элементы",["C","H","O","N","S","Cl","Br","Na","K","Cu","Ag","Mn"],""],
+ ["Связи, скобки, цифры",["-","=","≡","(",")",..."0123456789"],""],
+ ["Радикалы и группы",["CH3","C2H5","C3H7","C6H5","OH","NH2","COOH","CHO","NO2"],"rad"]];
+KB.forEach(([t,a,c])=>{$("#kb").insertAdjacentHTML("beforeend",'<div class="kt">'+t+'</div>');
+ const d=document.createElement("div");d.className="kb";
+ a.forEach(x=>{const b=document.createElement("button");b.textContent=x;b.className=c;
+  b.onmousedown=e=>e.preventDefault();b.onclick=()=>ins(x);d.appendChild(b)});$("#kb").appendChild(d)});
+$("#bs").onmousedown=e=>e.preventDefault();
+$("#bs").onclick=()=>{if(!cur)return;const s=cur.selectionStart,e=cur.selectionEnd;
+ if(s!==e)cur.setRangeText("",s,e,"end");else if(s>0)cur.setRangeText("",s-1,s,"end");cur.focus()};
+$("#clr").onclick=()=>{if(cur){cur.value="";cur.focus()}};
+$("#add").onclick=()=>row("").focus();
+const EX={"Алканы":[["CH4","Cl2"],["C3H8","O2"],["этан"]],
+"Алкены":[["CH2=CH-CH3","HBr"],["этилен","H2O"],["пропен","KMnO4"],["CH2=CH2"]],
+"Алкины":[["ацетилен","H2O"],["CaC2","H2O"],["пропин","H2"],["C2H2"]],
+"Спирты":[["этанол","Na"],["этанол","CuO"],["CH3-CH2-OH","CH3COOH"],["пропанол-2","H2SO4"]],
+"Альдегиды и кислоты":[["этаналь","Ag2O"],["этаналь","H2"],["уксусная кислота","NaOH"],["CH3COOH","Na2CO3"]],
+"Галогеналканы":[["бромэтан","NaOH"],["CH3-CH2-Br","KOH"],["хлорметан","Na"]],
+"Неорганика":[["HCl","NaOH"],["Na","H2O"],["H2SO4","NaOH"]]};
+Object.entries(EX).forEach(([t,l])=>{$("#ex").insertAdjacentHTML("beforeend",'<div class="kt" style="width:100%;margin:6px 0 0">'+t+'</div>');
+ l.forEach(x=>{const b=document.createElement("button");b.textContent=x.join(" + ");
+  b.onclick=()=>{$("#rows").innerHTML="";x.forEach(v=>row(v));go()};$("#ex").appendChild(b)})});
+function go(){
+ const items=[...document.querySelectorAll("#rows input")].map(i=>i.value).filter(v=>v.trim());
+ if(!items.length){$("#out").innerHTML='<div class="card bad">Введите хотя бы одно вещество.</div>';return}
+ const subs=[],known=[],unknown=[];
+ items.forEach(x=>{const s=parse(x);if(!s){unknown.push(x);return}
+  if(!subs.includes(s)){subs.push(s);known.push({f:INF[s][0],n:INF[s][1]})}});
+ show({known,unknown,reactions:subs.length?react(subs):[]})}
+$("#go").onclick=go;
+function show(d){let h="";
+ if(d.known.length)h+='<div class="card"><h2>Распознано</h2>'+d.known.map(k=>`<div class="rec"><span class="f">${fm(k.f)}</span> — ${esc(k.n)}</div>`).join("")+"</div>";
+ if(d.unknown.length)h+=`<div class="card bad">Не распознано: <b>${d.unknown.map(esc).join(", ")}</b>.<br>Проверь написание. Поддерживаются неразветвлённые цепи до C6 и основные неорганические вещества.</div>`;
+ if(!d.reactions.length&&d.known.length)h+='<div class="card">Для этого набора реакции из программы 10–11 класса не найдены. Попробуй реагенты: H2, Br2, HBr, H2O, Na, NaOH, CuO, O2, KMnO4, Ag2O.</div>';
+ d.reactions.forEach(r=>{h+=`<div class="card"><span class="tag">${esc(r.type)}</span>
+ <div class="eq">${fm(r.eq)}</div>${r.cond?`<div class="cond">Условия: ${fm(r.cond)}</div>`:""}
+ ${r.prods.map(p=>`<div class="pr"><div><span class="f">${fm(p.f)}</span><br><span class="n">${esc(p.n)}</span></div><button class="use" data-f="${esc(p.f)}">использовать</button></div>`).join("")}</div>`});
+ $("#out").innerHTML=h}
+document.addEventListener("click",e=>{if(e.target.classList.contains("use")){row(e.target.dataset.f);window.scrollTo({top:0,behavior:"smooth"})}});
+row("");row("");
+</script></body></html>
